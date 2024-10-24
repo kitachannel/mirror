@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>光の反射パズル</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            border: 2px solid #333;
+            margin: 20px;
+        }
+        .controls {
+            margin: 10px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .instructions {
+            max-width: 600px;
+            margin: 20px;
+            padding: 20px;
+            background-color: #333;
+            border-radius: 8px;
+        }
+        .angle-control {
+            margin: 10px;
+            padding: 10px;
+            background-color: #333;
+            border-radius: 4px;
+        }
+        input[type="range"] {
+            width: 200px;
+        }
+        .mirror-controls {
+            display: none;
+            background-color: #333;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .mirror-controls.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>光の反射パズル</h1>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <div class="angle-control">
+        <label for="initialAngle">光の初期角度: <span id="angleValue">45</span>度</label>
+        <input type="range" id="initialAngle" min="0" max="360" value="45">
+    </div>
+    <div class="mirror-controls" id="mirrorControls">
+        <label for="mirrorAngle">選択中の鏡の角度: <span id="mirrorAngleValue">45</span>度</label>
+        <input type="range" id="mirrorAngle" min="0" max="360" value="45">
+    </div>
+    <div class="controls">
+        <button onclick="addMirror()">ミラーを追加</button>
+        <button onclick="resetGame()">リセット</button>
+    </div>
+    <div class="instructions">
+        <h2>遊び方</h2>
+        <p>1. 左の黄色い光源から出た光を、ミラーで反射させて右の赤いターゲットに当てましょう。</p>
+        <p>2. スライダーで光の初期角度を調整できます。</p>
+        <p>3. 「ミラーを追加」ボタンで新しいミラーを設置できます。</p>
+        <p>4. ミラーをクリックして選択すると、角度を調整できます。</p>
+        <p>5. ミラーをドラッグして移動できます。</p>
+        <p>6. 「リセット」ボタンですべてのミラーを削除できます。</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const angleSlider = document.getElementById('initialAngle');
+        const angleValue = document.getElementById('angleValue');
+        const mirrorAngleSlider = document.getElementById('mirrorAngle');
+        const mirrorAngleValue = document.getElementById('mirrorAngleValue');
+        const mirrorControls = document.getElementById('mirrorControls');
+        
+        let mirrors = [];
+        const lightSource = { x: 50, y: 200 };
+        const target = { x: 550, y: 200 };
+        let selectedMirror = null;
+        let isDragging = false;
+        let initialAngle = 45;
+
+        angleSlider.addEventListener('input', (e) => {
+            initialAngle = parseInt(e.target.value);
+            angleValue.textContent = initialAngle;
+            draw();
+        });
+
+        mirrorAngleSlider.addEventListener('input', (e) => {
+            if (selectedMirror) {
+                selectedMirror.angle = parseInt(e.target.value);
+                mirrorAngleValue.textContent = selectedMirror.angle;
+                draw();
+            }
+        });
+
+        function updateMirrorControls() {
+            if (selectedMirror) {
+                mirrorControls.classList.add('active');
+                mirrorAngleSlider.value = selectedMirror.angle;
+                mirrorAngleValue.textContent = selectedMirror.angle;
+            } else {
+                mirrorControls.classList.remove('active');
+            }
+        }
+
+        function drawCircle(x, y, radius, color) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function drawDirectionIndicator() {
+            const angle = initialAngle * Math.PI / 180;
+            const length = 20;
+            const endX = lightSource.x + length * Math.cos(angle);
+            const endY = lightSource.y + length * Math.sin(angle);
+
+            ctx.beginPath();
+            ctx.moveTo(lightSource.x, lightSource.y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = 'orange';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function drawMirror(mirror, isSelected = false) {
+            const length = 40;
+            const angle = mirror.angle * Math.PI / 180;
+            const x1 = mirror.x - length * Math.cos(angle);
+            const y1 = mirror.y - length * Math.sin(angle);
+            const x2 = mirror.x + length * Math.cos(angle);
+            const y2 = mirror.y + length * Math.sin(angle);
+
+            // 選択中の鏡の周りに円を描画
+            if (isSelected) {
+                ctx.beginPath();
+                ctx.arc(mirror.x, mirror.y, 45, 0, Math.PI * 2);
+                ctx.strokeStyle = '#4CAF50';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            // 鏡本体の描画
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = isSelected ? '#4CAF50' : 'white';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // 鏡の向きを示す小さな矢印
+            const arrowLength = 10;
+            const arrowAngle = (angle + Math.PI/2);
+            const arrowX = mirror.x + arrowLength * Math.cos(arrowAngle);
+            const arrowY = mirror.y + arrowLength * Math.sin(arrowAngle);
+
+            ctx.beginPath();
+            ctx.moveTo(mirror.x, mirror.y);
+            ctx.lineTo(arrowX, arrowY);
+            ctx.strokeStyle = '#888';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
+            const denominator = ((x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4));
+            if (denominator === 0) return null;
+
+            const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denominator;
+            const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denominator;
+
+            if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+                return {
+                    x: x1 + t * (x2 - x1),
+                    y: y1 + t * (y2 - y1)
+                };
+            }
+            return null;
+        }
+
+        function drawLightPath() {
+            let currentPos = { x: lightSource.x, y: lightSource.y };
+            let direction = initialAngle;
+            let remainingBounces = 10;
+
+            while (remainingBounces > 0) {
+                const endX = currentPos.x + 1000 * Math.cos(direction * Math.PI / 180);
+                const endY = currentPos.y + 1000 * Math.sin(direction * Math.PI / 180);
+
+                let closestIntersection = null;
+                let closestDistance = Infinity;
+                let intersectingMirror = null;
+
+                for (const mirror of mirrors) {
+                    const length = 40;
+                    const mirrorAngle = mirror.angle * Math.PI / 180;
+                    const mx1 = mirror.x - length * Math.cos(mirrorAngle);
+                    const my1 = mirror.y - length * Math.sin(mirrorAngle);
+                    const mx2 = mirror.x + length * Math.cos(mirrorAngle);
+                    const my2 = mirror.y + length * Math.sin(mirrorAngle);
+
+                    const intersection = lineIntersection(
+                        currentPos.x, currentPos.y, endX, endY,
+                        mx1, my1, mx2, my2
+                    );
+
+                    if (intersection) {
+                        const distance = Math.sqrt(
+                            (intersection.x - currentPos.x) ** 2 +
+                            (intersection.y - currentPos.y) ** 2
+                        );
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            closestIntersection = intersection;
+                            intersectingMirror = mirror;
+                        }
+                    }
+                }
+
+                ctx.beginPath();
+                ctx.moveTo(currentPos.x, currentPos.y);
+                
+                if (closestIntersection) {
+                    ctx.lineTo(closestIntersection.x, closestIntersection.y);
+                    ctx.strokeStyle = 'yellow';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    const mirrorAngle = intersectingMirror.angle;
+                    const incidentAngle = direction;
+                    const reflectionAngle = 2 * mirrorAngle - incidentAngle;
+
+                    currentPos = closestIntersection;
+                    direction = reflectionAngle;
+                } else {
+                    ctx.lineTo(endX, endY);
+                    ctx.strokeStyle = 'yellow';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    break;
+                }
+
+                remainingBounces--;
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawCircle(lightSource.x, lightSource.y, 10, 'yellow');
+            drawDirectionIndicator();
+            drawCircle(target.x, target.y, 10, 'red');
+
+            mirrors.forEach(mirror => {
+                drawMirror(mirror, mirror === selectedMirror);
+            });
+
+            drawLightPath();
+        }
+
+        function addMirror() {
+            const newMirror = {
+                x: Math.random() * (canvas.width - 100) + 50,
+                y: Math.random() * (canvas.height - 100) + 50,
+                angle: 45
+            };
+            mirrors.push(newMirror);
+            // 新しく追加した鏡を選択状態にする
+            selectedMirror = newMirror;
+            updateMirrorControls();
+            draw();
+        }
+
+        function resetGame() {
+            mirrors = [];
+            selectedMirror = null;
+            updateMirrorControls();
+            draw();
+        }
+
+        function getClickedMirror(x, y) {
+            return mirrors.find(mirror => 
+                Math.sqrt((mirror.x - x) ** 2 + (mirror.y - y) ** 2) < 20
+            );
+        }
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const clickedMirror = getClickedMirror(mouseX, mouseY);
+            if (clickedMirror) {
+                selectedMirror = clickedMirror;
+                isDragging = true;
+            } else {
+                selectedMirror = null;
+            }
+            updateMirrorControls();
+            draw();
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isDragging && selectedMirror) {
+                const rect = canvas.getBoundingClientRect();
+                selectedMirror.x = e.clientX - rect.left;
+                selectedMirror.y = e.clientY - rect.top;
+                draw();
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // 初期描画
+        draw();
+    </script>
+</body>
+</html>
